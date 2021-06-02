@@ -29,6 +29,9 @@ use crossterm::{
     terminal,
 };
 
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
+
 pub mod options {
     pub const SILENT: &str = "silent";
     pub const LOGICAL: &str = "logical";
@@ -313,23 +316,28 @@ fn break_buff(buff: &str, cols: usize) -> Vec<String> {
     lines
 }
 
-fn break_line(mut line: &str, cols: usize) -> Vec<String> {
-    let breaks = (line.len() / cols).saturating_add(1);
-    let mut lines = Vec::with_capacity(breaks);
-    // TODO: Use unicode width instead of the length in bytes.
-    if line.len() < cols {
+fn break_line(line: &str, cols: usize) -> Vec<String> {
+    let width = UnicodeWidthStr::width(line);
+    let mut lines = Vec::new();
+    if width < cols {
         lines.push(line.to_string());
         return lines;
     }
 
-    for _ in 1..=breaks {
-        let (line1, line2) = line.split_at(cols);
-        lines.push(line1.to_string());
-        if line2.len() < cols {
-            lines.push(line2.to_string());
-            break;
+    let gr_inds = UnicodeSegmentation::grapheme_indices(line, true).collect::<Vec<(usize, &str)>>();
+    let mut iter = gr_inds.into_iter();
+    let mut breaks = 0;
+    let mut last_index: usize = 0;
+    while let Some((index, _s)) = iter.next() {
+        if UnicodeWidthStr::width(&line[last_index..index]) >= cols * (breaks + 1) {
+            breaks += 1;
+            lines.push(line[last_index..index].to_string());
+            last_index = index;
         }
-        line = line2;
+    }
+
+    if last_index != line.len() {
+        lines.push(line[last_index..].to_string());
     }
     lines
 }
